@@ -1,3 +1,7 @@
+# Data to train on
+data/
+
+# Haskell & Stack
 dist
 dist-*
 cabal-dev
