@@ -29,3 +29,4 @@ main = do
   imagesInIDX <- decodeIDXFile "./data/t10k-images-idx3-ubyte"
   let firstImage = head $ idxToPng (fromJust imagesInIDX) in
     Png.writePng "./first.png" firstImage
+  putStrLn "Wrote first test image to ./first.png"
