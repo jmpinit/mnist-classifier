@@ -192,17 +192,14 @@ main = do
 
   putStrLn $ "best guess: " ++ show (bestOf $ feed example smart)
 
-  let guesses = bestOf . (\n -> feed (getX testImages n) smart) <$> [0..9999]
   let answers = getLabel testLabels <$> [0..9999]
 
-  putStrLn $ show (sum $ fromEnum <$> zipWith (==) guesses answers) ++
-    " / 10000"
+  --putStrLn $ show (sum $ fromEnum <$> zipWith (==) guesses answers) ++
+   -- " / 10000"
 
-  {-
-  let classifier = fromJust $ trainClassifier trainingImages trainingLabels
-  let guessedLabels = map classifier testImages
-  let numberOfCorrectGuesses = length (filter (uncurry (==)) (zip testLabels guessedLabels))
-  let ratioCorrect = realToFrac numberOfCorrectGuesses / realToFrac (length testLabels)
+  --let classifier = fromJust $ trainClassifier trainingImages trainingLabels
+  let guesses = bestOf . (\n -> feed (getX testImages n) smart) <$> [0..9999]
+  let numberOfCorrectGuesses = length (filter (uncurry (==)) (zip answers guesses))
+  let ratioCorrect = realToFrac numberOfCorrectGuesses / realToFrac (length answers)
   let outputMessage = show (100.0 * ratioCorrect) ++ "% of labels on test images guessed correctly"
     in putStrLn outputMessage
-    -}
