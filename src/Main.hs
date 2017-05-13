@@ -11,6 +11,8 @@ import Data.Maybe -- FIXME: for fromJust, which can throw an error
 import Data.Word (Word64)
 import Control.Monad
 import System.Random
+import Data.List
+import Data.Ord
 
 -- FIXME: using psuedo-random numbers for test
 -- thx http://stackoverflow.com/a/8777494
@@ -93,6 +95,12 @@ output f ws b as = f (sum (zipWith (*) ws as) + b)
 -- rectifier: https://en.wikipedia.org/wiki/Rectifier_(neural_networks)
 relu = max 0
 
+relu' x | x < 0      = 0
+        | otherwise  = 1
+
+dCost a y | y == 1 && a >= y = 0
+          | otherwise        = a - y
+
 newBrain :: [Int] -> IO [([Float], [[Float]])]
 newBrain szs@(_:ts) = zip (flip replicate 1 <$> ts) <$>
   zipWithM (\m n -> replicateM n $ replicateM m $ gauss 0.01) szs ts
@@ -103,8 +111,39 @@ zLayer as (bs, wvs) = zipWith (+) bs $ sum . zipWith (*) as <$> wvs
 feed :: [Float] -> [([Float], [[Float]])] -> [Float]
 feed = foldl (((relu <$>) . ) . zLayer)
 
--- Generate a neural network, and supply the inputs [0.1, 0.2, 0.3].
-main = newBrain [3, 4, 2] >>= print . feed [0.1, 0.2, 0.3]
+-- xv: vector of inputs
+-- Returns a list of (weighted inputs, activations) of each layer,
+-- from last layer to first.
+revaz :: [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
+revaz xv = foldl (\(avs@(av:_), zs) (bs, wms) -> let
+  zs' = zLayer av (bs, wms) in (((relu <$> zs'):avs), (zs':zs))) ([xv], [])
+
+-- xv: vector of inputs
+-- yv: vector of desired outputs
+-- Returns list of (activations, deltas) of each layer in order.
+deltas :: [Float] -> [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
+deltas xv yv layers = let
+  (avs@(av:_), zv:zvs) = revaz xv layers
+  delta0 = zipWith (*) (zipWith dCost av yv) (relu' <$> zv)
+  in (reverse avs, f (transpose . snd <$> reverse layers) zvs [delta0]) where
+    f _ [] dvs = dvs
+    f (wm:wms) (zv:zvs) dvs@(dv:_) = f wms zvs $ (:dvs) $
+      zipWith (*) [(sum $ zipWith (*) row dv) | row <- wm] (relu' <$> zv)
+
+eta = 0.002
+
+descend av dv = zipWith (-) av ((eta *) <$> dv)
+
+learn :: [Float] -> [Float] -> [([Float], [[Float]])] -> [([Float], [[Float]])]
+learn xv yv layers = let (avs, dvs) = deltas xv yv layers
+  in zip (zipWith descend (fst <$> layers) dvs) $
+    zipWith3 (\wvs av dv -> zipWith (\wv d -> descend wv ((d*) <$> av)) wvs dv)
+      (snd <$> layers) avs dvs
+
+getImage s n = pixels $ s !! n
+getX     s n = (/ 256) . fromIntegral <$> getImage s n
+getLabel s n = s !! n
+getY     s n = fromIntegral . fromEnum . (getLabel s n ==) <$> [0..9]
 
 -- END stolen things
 
@@ -128,19 +167,42 @@ output neuron = activation neuron $ sum inputValues where
 testNet = Neuron { inputs = [], weights = [], activation = const 0 }
 -}
 
-{-main :: IO ()
+main :: IO ()
 main = do
   trainingImages <- imagesFromIDXFile "./data/t10k-images-idx3-ubyte"
   trainingLabels <- labelsFromIDXFile "./data/t10k-labels-idx1-ubyte"
   testImages <- imagesFromIDXFile "./data/train-images-idx3-ubyte"
   testLabels <- labelsFromIDXFile "./data/train-labels-idx1-ubyte"
 
-  putStrLn $ show newBrain [3, 4, 2]
+  b <- newBrain [784, 30, 10]
+  n <- (`mod` (10000 :: Int)) <$> randomIO
 
+  let
+    example = getX testImages n
+    bs = scanl (foldl' (\b n -> learn (getX trainingImages n) (getY trainingLabels n) b)) b [
+     [   0.. 999],
+     [1000..2999],
+     [3000..5999],
+     [6000..9999]]
+    smart = last bs
+    cute d score = show d ++ ": " ++ replicate (round $ 70 * min 1 score) '+'
+    bestOf = fst . maximumBy (comparing snd) . zip [0..]
+
+  forM_ bs $ putStrLn . unlines . zipWith cute [0..9] . feed example
+
+  putStrLn $ "best guess: " ++ show (bestOf $ feed example smart)
+
+  let guesses = bestOf . (\n -> feed (getX testImages n) smart) <$> [0..9999]
+  let answers = getLabel testLabels <$> [0..9999]
+
+  putStrLn $ show (sum $ fromEnum <$> zipWith (==) guesses answers) ++
+    " / 10000"
+
+  {-
   let classifier = fromJust $ trainClassifier trainingImages trainingLabels
   let guessedLabels = map classifier testImages
   let numberOfCorrectGuesses = length (filter (uncurry (==)) (zip testLabels guessedLabels))
   let ratioCorrect = realToFrac numberOfCorrectGuesses / realToFrac (length testLabels)
   let outputMessage = show (100.0 * ratioCorrect) ++ "% of labels on test images guessed correctly"
     in putStrLn outputMessage
--}
+    -}
